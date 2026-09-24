@@ -3,6 +3,9 @@ package com.zoomearth.wallpaper.extractor
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Canvas
+import android.view.View
+import android.webkit.WebResourceError
+import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.Dispatchers
@@ -12,7 +15,6 @@ import kotlin.coroutines.resume
 
 class ZoomEarthImageExtractor(private val context: Context) {
 
-    // Ahora la función acepta los 3 parámetros que MainActivity le está enviando (latitud, longitud y zoom)
     suspend fun extractCleanBitmap(lat: Any, lon: Any, zoom: Any): Bitmap? = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { continuation ->
             val webView = WebView(context)
@@ -23,7 +25,12 @@ class ZoomEarthImageExtractor(private val context: Context) {
                 userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
 
-            webView.layout(0, 0, 1080, 1920)
+            // FORZAMOS a Android a darle un tamaño real al WebView aunque sea invisible
+            webView.measure(
+                View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
+                View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY)
+            )
+            webView.layout(0, 0, webView.measuredWidth, webView.measuredHeight)
 
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String?) {
@@ -51,21 +58,29 @@ class ZoomEarthImageExtractor(private val context: Context) {
                     """.trimIndent()
 
                     view.evaluateJavascript(cleanMapJs) {
+                        // Subimos el tiempo de espera a 4 segundos para asegurar que el mapa cargue bien
                         view.postDelayed({
                             try {
-                                val bitmap = Bitmap.createBitmap(view.width, view.height, Bitmap.Config.ARGB_8888)
+                                val w = if (view.width > 0) view.width else 1080
+                                val h = if (view.height > 0) view.height else 1920
+                                
+                                val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
                                 val canvas = Canvas(bitmap)
                                 view.draw(canvas)
                                 if (continuation.isActive) continuation.resume(bitmap)
                             } catch (e: Exception) {
                                 if (continuation.isActive) continuation.resume(null)
                             }
-                        }, 3000)
+                        }, 4000)
                     }
+                }
+
+                // Si hay error de red, abortamos en lugar de quedarnos girando al infinito
+                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
+                    if (continuation.isActive) continuation.resume(null)
                 }
             }
             
-            // Inyectamos las coordenadas directamente en la URL de Zoom Earth
             webView.loadUrl("https://zoom.earth/maps/satellite/#view=$lat,$lon,${zoom}z")
         }
     }
