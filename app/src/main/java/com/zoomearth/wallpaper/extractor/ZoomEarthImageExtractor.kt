@@ -1,4 +1,4 @@
-import android.graphics.Bitmap
+package com.zoomearth.wallpaper
 import android.graphics.BitmapFactory
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
