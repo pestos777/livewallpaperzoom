@@ -12,8 +12,8 @@ import kotlin.coroutines.resume
 
 class ZoomEarthImageExtractor(private val context: Context) {
 
-    // ESTA es la función que tu MainActivity y tu Worker están buscando desesperadamente
-    suspend fun extractCleanBitmap(): Bitmap? = withContext(Dispatchers.Main) {
+    // Ahora la función acepta los 3 parámetros que MainActivity le está enviando (latitud, longitud y zoom)
+    suspend fun extractCleanBitmap(lat: Any, lon: Any, zoom: Any): Bitmap? = withContext(Dispatchers.Main) {
         suspendCancellableCoroutine { continuation ->
             val webView = WebView(context)
             
@@ -65,7 +65,8 @@ class ZoomEarthImageExtractor(private val context: Context) {
                 }
             }
             
-            webView.loadUrl("https://zoom.earth/")
+            // Inyectamos las coordenadas directamente en la URL de Zoom Earth
+            webView.loadUrl("https://zoom.earth/maps/satellite/#view=$lat,$lon,${zoom}z")
         }
     }
 }
