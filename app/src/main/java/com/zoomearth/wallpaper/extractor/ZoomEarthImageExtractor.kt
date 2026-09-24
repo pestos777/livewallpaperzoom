@@ -2,11 +2,8 @@ package com.zoomearth.wallpaper.extractor
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.util.Base64
+import android.graphics.Canvas
 import android.view.View
-import android.webkit.WebResourceError
-import android.webkit.WebResourceRequest
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import kotlinx.coroutines.Dispatchers
@@ -23,9 +20,9 @@ class ZoomEarthImageExtractor(private val context: Context) {
             webView.settings.apply {
                 javaScriptEnabled = true
                 domStorageEnabled = true
-                userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
 
+            // Forzamos un tamaño fijo para evitar el pantallazo negro
             webView.measure(
                 View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY)
@@ -34,51 +31,36 @@ class ZoomEarthImageExtractor(private val context: Context) {
 
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String?) {
-                    // 1. Limpiamos la interfaz de Zoom Earth
-                    val cleanMapJs = """
+                    // 1. Inyectamos CSS puro para ocultar menús, botones y barras
+                    val hideUiJs = """
                         var style = document.createElement('style');
-                        style.innerHTML = 'header, nav, aside, footer, .panel, .menu, .button, .overlay { display: none !important; }';
+                        style.innerHTML = `
+                            header, nav, aside, footer, #header, #timeline, #panel, #search, 
+                            .panel, .menu, .button, .bar, .tool, .notifications, .play-controls,
+                            .mapboxgl-control-container, .leaflet-control-container,
+                            .app-promo, .overlay { display: none !important; }
+                        `;
                         document.head.appendChild(style);
                     """.trimIndent()
-                    view.evaluateJavascript(cleanMapJs, null)
+                    view.evaluateJavascript(hideUiJs, null)
 
-                    // 2. Estrategia Python: Esperamos 5 segundos y sacamos el Base64 directamente del canvas HTML
+                    // 2. Esperamos 3 segundos y sacamos la captura con el método que ya te funcionó
                     view.postDelayed({
-                        val getBase64Js = """
-                            (function() {
-                                var canvas = document.querySelector('canvas');
-                                if (canvas) {
-                                    return canvas.toDataURL('image/png');
-                                }
-                                return 'null';
-                            })();
-                        """.trimIndent()
-
-                        view.evaluateJavascript(getBase64Js) { base64 ->
-                            try {
-                                if (base64 != null && base64 != "null" && base64 != "\"null\"" && base64.contains(",")) {
-                                    // Limpiamos las comillas extra que añade el WebView y el encabezado de Base64
-                                    val cleanBase64 = base64.substringAfter(",").replace("\"", "")
-                                    val imageBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
-                                    val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
-                                    
-                                    if (continuation.isActive) continuation.resume(bitmap)
-                                } else {
-                                    if (continuation.isActive) continuation.resume(null)
-                                }
-                            } catch (e: Exception) {
-                                if (continuation.isActive) continuation.resume(null)
-                            }
+                        try {
+                            val bitmap = Bitmap.createBitmap(1080, 1920, Bitmap.Config.ARGB_8888)
+                            val canvas = Canvas(bitmap)
+                            view.draw(canvas)
+                            
+                            if (continuation.isActive) continuation.resume(bitmap)
+                        } catch (e: Exception) {
+                            if (continuation.isActive) continuation.resume(null)
                         }
-                    }, 5000)
-                }
-
-                override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
-                    if (continuation.isActive) continuation.resume(null)
+                    }, 3000)
                 }
             }
             
-            webView.loadUrl("https://zoom.earth/maps/satellite/#view=$lat,$lon,${zoom}z")
+            // Cargamos la URL usando los mismos parámetros que tienes en tu imagen
+            webView.loadUrl("https://zoom.earth/maps/satellite/#view=$lat,$lon,${zoom}z/overlays=radar,labels:off")
         }
     }
 }
