@@ -2,7 +2,8 @@ package com.zoomearth.wallpaper.extractor
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.graphics.Canvas
+import android.graphics.BitmapFactory
+import android.util.Base64
 import android.view.View
 import android.webkit.WebResourceError
 import android.webkit.WebResourceRequest
@@ -25,57 +26,53 @@ class ZoomEarthImageExtractor(private val context: Context) {
                 userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
             }
 
-            // FORZAMOS a Android a darle un tamaño real al WebView aunque sea invisible
             webView.measure(
                 View.MeasureSpec.makeMeasureSpec(1080, View.MeasureSpec.EXACTLY),
                 View.MeasureSpec.makeMeasureSpec(1920, View.MeasureSpec.EXACTLY)
             )
-            webView.layout(0, 0, webView.measuredWidth, webView.measuredHeight)
+            webView.layout(0, 0, 1080, 1920)
 
             webView.webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView, url: String?) {
+                    // 1. Limpiamos la interfaz de Zoom Earth
                     val cleanMapJs = """
-                        (function() {
-                            var style = document.createElement('style');
-                            style.innerHTML = `
-                                .mapboxgl-control-container, .leaflet-control-container { display: none !important; }
-                                header, nav, aside, footer, #header, #timeline, #panel, #search, #layers, #play, #zoom,
-                                .panel, .menu, .button, .bar, .tool, .notifications, .play-controls,
-                                .app-promo, [class*="promo"], [class*="modal"], [class*="banner"], 
-                                .overlay, #app-download-dialog, .cookie-banner { display: none !important; }
-                                body, html { margin: 0 !important; padding: 0 !important; overflow: hidden !important; }
-                            `;
-                            document.head.appendChild(style);
-
-                            var buttons = document.querySelectorAll('button');
-                            buttons.forEach(function(btn) {
-                                var text = btn.innerText.toLowerCase();
-                                if (text.includes('continuar') || text.includes('aceptar') || text.includes('accept')) {
-                                    btn.click();
-                                }
-                            });
-                        })();
+                        var style = document.createElement('style');
+                        style.innerHTML = 'header, nav, aside, footer, .panel, .menu, .button, .overlay { display: none !important; }';
+                        document.head.appendChild(style);
                     """.trimIndent()
+                    view.evaluateJavascript(cleanMapJs, null)
 
-                    view.evaluateJavascript(cleanMapJs) {
-                        // Subimos el tiempo de espera a 4 segundos para asegurar que el mapa cargue bien
-                        view.postDelayed({
+                    // 2. Estrategia Python: Esperamos 5 segundos y sacamos el Base64 directamente del canvas HTML
+                    view.postDelayed({
+                        val getBase64Js = """
+                            (function() {
+                                var canvas = document.querySelector('canvas');
+                                if (canvas) {
+                                    return canvas.toDataURL('image/png');
+                                }
+                                return 'null';
+                            })();
+                        """.trimIndent()
+
+                        view.evaluateJavascript(getBase64Js) { base64 ->
                             try {
-                                val w = if (view.width > 0) view.width else 1080
-                                val h = if (view.height > 0) view.height else 1920
-                                
-                                val bitmap = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
-                                val canvas = Canvas(bitmap)
-                                view.draw(canvas)
-                                if (continuation.isActive) continuation.resume(bitmap)
+                                if (base64 != null && base64 != "null" && base64 != "\"null\"" && base64.contains(",")) {
+                                    // Limpiamos las comillas extra que añade el WebView y el encabezado de Base64
+                                    val cleanBase64 = base64.substringAfter(",").replace("\"", "")
+                                    val imageBytes = Base64.decode(cleanBase64, Base64.DEFAULT)
+                                    val bitmap = BitmapFactory.decodeByteArray(imageBytes, 0, imageBytes.size)
+                                    
+                                    if (continuation.isActive) continuation.resume(bitmap)
+                                } else {
+                                    if (continuation.isActive) continuation.resume(null)
+                                }
                             } catch (e: Exception) {
                                 if (continuation.isActive) continuation.resume(null)
                             }
-                        }, 4000)
-                    }
+                        }
+                    }, 5000)
                 }
 
-                // Si hay error de red, abortamos en lugar de quedarnos girando al infinito
                 override fun onReceivedError(view: WebView?, request: WebResourceRequest?, error: WebResourceError?) {
                     if (continuation.isActive) continuation.resume(null)
                 }
