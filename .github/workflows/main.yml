@@ -19,29 +19,20 @@ jobs:
           java-version: '17'
           distribution: 'temurin'
 
-      - name: Configurar Gradle en el sistema
+      - name: Instalar Gradle en el servidor
         uses: gradle/actions/setup-gradle@v3
 
-      - name: Asignar permisos a gradlew si existe
+      - name: Compilar APK (Búsqueda automática)
         run: |
-          find . -name "gradlew" -exec chmod +x {} + || true
-
-      - name: Compilar APK (Debug)
-        run: |
-          if [ -f "./gradlew" ]; then
-            ./gradlew assembleDebug --stacktrace
-          elif [ -f "./ZoomEarthWallpaper/gradlew" ]; then
-            cd ZoomEarthWallpaper && ./gradlew assembleDebug --stacktrace
-          elif [ -f "./ZoomEarthWallpaper/build.gradle.kts" ]; then
-            cd ZoomEarthWallpaper && gradle assembleDebug --stacktrace
-          else
-            gradle assembleDebug --stacktrace
-          fi
+          # Buscar donde esta el archivo build.gradle.kts y compilar desde alli
+          BUILD_FILE=$(find . -name "build.gradle.kts" | head -n 1)
+          PROJECT_DIR=$(dirname "$BUILD_FILE")
+          echo "Proyecto encontrado en: $PROJECT_DIR"
+          cd "$PROJECT_DIR"
+          gradle assembleDebug --stacktrace
 
       - name: Subir APK ejecutable como Artefacto
         uses: actions/upload-artifact@v4
         with:
           name: ZoomEarthWallpaper-APK
-          path: |
-            app/build/outputs/apk/debug/app-debug.apk
-            **/app/build/outputs/apk/debug/app-debug.apk
+          path: "**/build/outputs/apk/debug/*.apk"
