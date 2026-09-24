@@ -19,18 +19,12 @@ class ZoomEarthImageExtractor(private val context: Context) {
         val mainHandler = Handler(Looper.getMainLooper())
         
         mainHandler.post {
-            val webView = WebView(context).apply {
-                settings.javaScriptEnabled = true
-                settings.domStorageEnabled = true
-                settings.loadsImagesAutomatically = true
-                
-                measure(
-                    View.MeasureSpec.makeMeasureSpec(width, View.MeasureSpec.EXACTLY),
-                    View.MeasureSpec.makeMeasureSpec(height, View.MeasureSpec.EXACTLY)
-                )
-                layout(0, 0, measuredWidth, measuredHeight)
-            }
-
+         val webView = WebView(context)
+webView.settings.apply {
+    javaScriptEnabled = true
+    // Forzar User-Agent de PC para eliminar el aviso emergente móvil
+    userAgentString = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+}
             continuation.invokeOnCancellation {
                 mainHandler.post { webView.destroy() }
             }
